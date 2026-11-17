@@ -1,99 +1,227 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FIR NOTAM & CFP/FPL Route Comparator</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Leaflet CSS & JS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- PDF.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script>
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    </script>
-</head>
-<body class="bg-slate-900 text-slate-100 font-sans h-screen flex flex-col overflow-hidden">
-    <!-- Top Header -->
-    <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 flex items-center justify-between shrink-0">
-        <div class="flex items-center space-x-3">
-            <span class="bg-indigo-600 text-white text-xs font-bold px-2.5 py-1 rounded">A350 Ops</span>
-            <h1 class="text-lg font-semibold tracking-wide">NOTAM Map & CFP/FPL Route Comparator</h1>
-        </div>
-        <div class="flex items-center space-x-3">
-            <label class="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded shadow transition flex items-center space-x-2">
-                <span>📂 OFP PDF 업로드</span>
-                <input type="file" id="pdf-upload" accept="application/pdf" class="hidden">
-            </label>
-        </div>
-    </header>
-
-    <!-- Main Workspace -->
-    <div class="flex-1 flex overflow-hidden">
-        <!-- Sidebar / Comparison Panel -->
-        <aside class="w-96 bg-slate-800/90 border-r border-slate-700 flex flex-col shrink-0 overflow-y-auto p-4 space-y-4">
-            <div class="border-b border-slate-700 pb-3">
-                <h2 class="text-sm font-bold uppercase tracking-wider text-indigo-400">Route Comparison (CFP vs FPL)</h2>
-                <p class="text-xs text-slate-400 mt-1">CFP (`2ND-$` 아래) 루트와 FPL 페이지(네 번째 줄 항) 루트를 정밀 대조합니다.</p>
-            </div>
-
-            <!-- Comparison Status Card -->
-            <div id="comparison-card" class="p-3 rounded-lg border bg-slate-900/50 border-slate-700 text-sm transition-all">
-                <div class="flex items-center justify-between mb-2">
-                    <span class="font-medium text-slate-300">비교 상태:</span>
-                    <span id="match-badge" class="px-2 py-0.5 rounded text-xs font-semibold bg-slate-700 text-slate-300">대기 중</span>
-                </div>
-                <div class="space-y-2 text-xs">
-                    <div>
-                        <span class="text-slate-400 block font-semibold mb-0.5">CF Route (2ND-$ 아래):</span>
-                        <div id="cfp-route-text" class="p-1.5 bg-slate-950 rounded border border-slate-800 font-mono text-slate-300 break-all min-h-[30px]">-</div>
-                    </div>
-                    <div>
-                        <span class="text-slate-400 block font-semibold mb-0.5">FPL Route (네 번째 줄 항):</span>
-                        <div id="fpl-route-text" class="p-1.5 bg-slate-950 rounded border border-slate-800 font-mono text-slate-300 break-all min-h-[30px]">-</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- NOTAM Summary & List -->
-            <div class="flex-1 flex flex-col min-h-[200px]">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">항로 검증 및 NOTAM 매칭</h3>
-                <div id="notam-list" class="flex-1 bg-slate-900/80 rounded border border-slate-700 p-2 overflow-y-auto text-xs space-y-2">
-                    <p class="text-slate-500 text-center py-8">PDF 파일을 업로드하면 루트 비교 및 노탐 분석이 시작됩니다.</p>
-                </div>
-            </div>
-        </aside>
-
-        <!-- Map Container -->
-        <main class="flex-1 relative">
-            <div id="map" class="w-full h-full z-0"></div>
-        </main>
+<!-- Header -->
+<header class="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center justify-between shadow-md">
+    <div class="flex items-center space-x-3">
+        <span class="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">✈️ Flight Ops & NOTAM Suite</span>
+        <span class="text-xs bg-slate-700 text-slate-300 px-2.5 py-1 rounded-full border border-slate-600">v1.2 Lite + CFL/FPL Check</span>
     </div>
+    <div class="text-xs text-slate-400">
+        Offline Ready & Local Processing
+    </div>
+</header>
 
-    <!-- Script Logic -->
-    <script>
-        // Initialize Map
-        const map = L.map('map').setView([37.5665, 126.9780], 5);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '© OpenStreetMap'
-        }).addTo(map);
+<!-- Main Workspace -->
+<main class="flex-1 flex flex-col lg:flex-row overflow-hidden">
+    
+    <!-- Left Panel: Controls, FMS, & Route Comparison -->
+    <section class="w-full lg:w-1/2 flex flex-col border-r border-slate-700 bg-slate-850 overflow-y-auto p-4 space-y-4">
+        
+        <!-- Tab Navigation -->
+        <div class="flex border-b border-slate-700 space-x-2">
+            <button onclick="switchTab('converter')" id="tab-converter" class="px-4 py-2 text-sm font-semibold border-b-2 border-blue-500 text-blue-400 transition-colors">FMS & OFP Parser</button>
+            <button onclick="switchTab('routeCheck')" id="tab-routeCheck" class="px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-colors">CFL vs FPL Check</button>
+        </div>
 
-        let routeLayer = null;
+        <!-- Tab 1: FMS / OFP Converter -->
+        <div id="panel-converter" class="space-y-4">
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
+                <label class="block text-sm font-medium text-slate-300 mb-2">OFP PDF 업로드 또는 텍스트 입력</label>
+                <input type="file" id="pdfFile" accept="application/pdf" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer mb-3" />
+                <textarea id="rawInput" rows="4" placeholder="여기에 OFP 원문 또는 FPL 라우트를 직접 붙여넣으세요..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500"></textarea>
+                <button onclick="processData()" class="mt-3 w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors shadow">데이터 분석 및 변환 실행</button>
+            </div>
 
-        // PDF Upload Handler
-        document.getElementById('pdf-upload').addEventListener('change', async function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
+                <h3 class="text-sm font-medium text-slate-300 mb-2">변환 결과 (FMS 형식)</h3>
+                <textarea id="fmsOutput" readonly rows="6" placeholder="변환된 FMS 루트가 여기에 표시됩니다..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm font-mono text-emerald-400 focus:outline-none"></textarea>
+            </div>
+        </div>
 
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-                const pdfDoc = await loadingTask.promise;
+        <!-- Tab 2: CFL vs FPL Route Comparison -->
+        <div id="panel-routeCheck" class="space-y-4 hidden">
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm space-y-3">
+                <h3 class="text-sm font-semibold text-slate-200">항로 불일치 검증기 (CFL vs FPL)</h3>
+                <p class="text-xs text-slate-400">현행 비행계획(CFL) 항로와 제출된 비행계획(FPL) 항로를 비교하여 차이점을 검출합니다.</p>
+                
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">FPL Route (제출된 항로)</label>
+                    <input type="text" id="inputFpl" value="RKSI G597 SADLI Y644 BIVAN/N0484F350 DCT" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+                </div>
 
-                let pagesText = [];
-                for (let i = 1; i <= pdfDoc.numPages; i++) {
-                    const page = await pdfDoc.getPage(i);
-                    const textContent = await page.getTextContent
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">CFL Route (현행/승인 항로)</label>
+                    <input type="text" id="inputCfl" value="RKSI G597 SADLI Y697 VYK/N0484F350 DCT" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono" />
+                </div>
+
+                <button onclick="runRouteComparison()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors shadow">항로 정밀 비교 검증</button>
+            </div>
+
+            <!-- Comparison Result Area -->
+            <div id="comparisonResultBox" class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm hidden space-y-3">
+                <div id="matchBadge" class="inline-block px-3 py-1 rounded-full text-xs font-bold"></div>
+                
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="bg-slate-900 p-2.5 rounded border border-slate-700">
+                        <span class="text-slate-400 block mb-1">FPL 파싱 토큰</span>
+                        <div id="resFplTokens" class="font-mono text-blue-300 break-all"></div>
+                    </div>
+                    <div class="bg-slate-900 p-2.5 rounded border border-slate-700">
+                        <span class="text-slate-400 block mb-1">CFL 파싱 토큰</span>
+                        <div id="resCflTokens" class="font-mono text-purple-300 break-all"></div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 p-3 rounded border border-slate-700 space-y-2 text-xs">
+                    <div class="font-semibold text-slate-300">🔍 세부 변경 사항</div>
+                    <div id="resMismatchDetails" class="text-slate-400 font-mono"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NOTAM Summary Status -->
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm mt-auto">
+            <h3 class="text-sm font-medium text-slate-300 mb-1">지역 FIR NOTAM 상태</h3>
+            <p id="notamStatus" class="text-xs text-slate-400">데이터가 로드되지 않았습니다. 지도를 통해 확인하세요.</p>
+        </div>
+    </section>
+
+    <!-- Right Panel: Leaflet Map -->
+    <section class="w-full lg:w-1/2 h-full relative">
+        <div id="map" class="w-full h-full"></div>
+    </section>
+
+</main>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // Initialize Map
+    const map = L.map('map').setView([37.5665, 126.9780], 6); // Default Seoul Center
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Tab Switching Logic
+    function switchTab(tabName) {
+        const converterPanel = document.getElementById('panel-converter');
+        const routeCheckPanel = document.getElementById('panel-routeCheck');
+        const tabConverter = document.getElementById('tab-converter');
+        const tabRouteCheck = document.getElementById('tab-routeCheck');
+
+        if (tabName === 'converter') {
+            converterPanel.classList.remove('hidden');
+            routeCheckPanel.classList.add('hidden');
+            tabConverter.className = "px-4 py-2 text-sm font-semibold border-b-2 border-blue-500 text-blue-400 transition-colors";
+            tabRouteCheck.className = "px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-colors";
+        } else {
+            converterPanel.classList.add('hidden');
+            routeCheckPanel.classList.remove('hidden');
+            tabRouteCheck.className = "px-4 py-2 text-sm font-semibold border-b-2 border-indigo-500 text-indigo-400 transition-colors";
+            tabConverter.className = "px-4 py-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-colors";
+        }
+    }
+
+    // FMS / OFP Processing Stub
+    function processData() {
+        const raw = document.getElementById('rawInput').value;
+        if (!raw.trim()) {
+            alert('변환할 내용을 입력하거나 PDF를 업로드해주세요.');
+            return;
+        }
+        // Simple mockup conversion logic
+        const formatted = `CO RTE RKSI01\nWAYPOINTS:\n${raw.toUpperCase().replace(/[\s\.\-]+/g, '\n')}\nEND`;
+        document.getElementById('fmsOutput').value = formatted;
+        document.getElementById('notamStatus').innerText = "FMS 루트가 성공적으로 변환되었습니다.";
+    }
+
+    // --- CFL / FPL Route Comparison Core Function ---
+    function compareFlightRoutes(fplRoute, cflRoute) {
+        const normalize = (str) => {
+            if (!str) return [];
+            return str
+                .toUpperCase()
+                .replace(/[\s\.\-]+/g, ' ')
+                .trim()
+                .split(/\s+/)
+                .filter(token => token.length > 0);
+        };
+
+        const fplArray = normalize(fplRoute);
+        const cflArray = normalize(cflRoute);
+
+        const isExactMatch = fplRoute.trim().toUpperCase() === cflRoute.trim().toUpperCase();
+
+        const maxLength = Math.max(fplArray.length, cflArray.length);
+        const mismatches = [];
+
+        for (let i = 0; i < maxLength; i++) {
+            const fplToken = fplArray[i] || '(없음)';
+            const cflToken = cflArray[i] || '(없음)';
+
+            if (fplToken !== cflToken) {
+                mismatches.push({
+                    index: i,
+                    fpl: fplToken,
+                    cfl: cflToken
+                });
+            }
+        }
+
+        const fplSet = new Set(fplArray);
+        const cflSet = new Set(cflArray);
+
+        const missingInCfl = fplArray.filter(item => !cflSet.has(item));
+        const addedInCfl = cflArray.filter(item => !fplSet.has(item));
+
+        return {
+            isExactMatch,
+            fplParsed: fplArray,
+            cflParsed: cflArray,
+            mismatches,
+            missingInCfl,
+            addedInCfl
+        };
+    }
+
+    // Run Route Comparison UI Handler
+    function runRouteComparison() {
+        const fplVal = document.getElementById('inputFpl').value;
+        const cflVal = document.getElementById('inputCfl').value;
+
+        const result = compareFlightRoutes(fplVal, cflVal);
+        const box = document.getElementById('comparisonResultBox');
+        const badge = document.getElementById('matchBadge');
+        const fplTokensEl = document.getElementById('resFplTokens');
+        const cflTokensEl = document.getElementById('resCflTokens');
+        const mismatchEl = document.getElementById('resMismatchDetails');
+
+        box.classList.remove('hidden');
+
+        if (result.isExactMatch) {
+            badge.className = "inline-block px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+            badge.innerText = "✅ 완전 일치 (Exact Match)";
+            mismatchEl.innerHTML = "<span class='text-emerald-400'>두 항로 간에 차이점이 없습니다.</span>";
+        } else {
+            badge.className = "inline-block px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30";
+            badge.innerText = "⚠️ 불일치 항목 발견 (Discrepancy Detected)";
+            
+            let detailsHtml = "";
+            if (result.mismatches.length > 0) {
+                detailsHtml += `<div class='mb-1 text-slate-300'>위치별 차이점:</div>`;
+                result.mismatches.forEach(m => {
+                    detailsHtml += `<div>• [인덱스 ${m.index}] FPL: <span class='text-blue-300'>${m.fpl}</span> ↔ CFL: <span class='text-purple-300'>${m.cfl}</span></div>`;
+                });
+            }
+            if (result.missingInCfl.length > 0) {
+                detailsHtml += `<div class='mt-2 text-slate-300'>CFL에서 누락된 포인트: <span class='text-red-400'>${result.missingInCfl.join(', ')}</span></div>`;
+            }
+            if (result.addedInCfl.length > 0) {
+                detailsHtml += `<div class='mt-1 text-slate-300'>CFL에 추가된 포인트: <span class='text-emerald-400'>${result.addedInCfl.join(', ')}</span></div>`;
+            }
+            mismatchEl.innerHTML = detailsHtml;
+        }
+
+        fplTokensEl.innerText = result.fplParsed.join(' ➔ ');
+        cflTokensEl.innerText = result.cflParsed.join(' ➔ ');
+    }
+</script>
